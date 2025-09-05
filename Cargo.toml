@@ -1,0 +1,18 @@
+[package]
+name = "osunbitdb"
+version = "0.1.0"
+edition = "2021"
+authors = ["focusboon"]
+description = "A lightweight async db"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/osunbit/osunbitdb"
+keywords = ["osunbit", "database", "async", "rust", "document"]
+categories = ["database", "storage"]
+readme = "README.md"
+
+[dependencies]
+rocksdb = "0.20"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+tokio = { version = "1.30", features = ["full"] }
+thiserror = "1.0"
