@@ -7,7 +7,7 @@ description = "A lightweight async db"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/osunbit/osunbitdb"
 keywords = ["osunbit", "database", "async", "rust", "document"]
-categories = ["database", "storage"]
+categories = ["database"]
 readme = "README.md"
 
 [dependencies]
