@@ -1,53 +1,75 @@
-use osunbitdb::OsunbitDB;
-use osunbitdb::json;
+use osunbitdb::{OsunbitDB, json, increment, remove};
 
 #[tokio::test]
-async fn transaction_test() {
-    // Connect to TiKV
-    let db = OsunbitDB::new(&["http://10.88.0.4:2379"]).await.unwrap();
+async fn transaction_atomic_ops_test() {
+    let db = OsunbitDB::new(&["http://10.88.0.3:2379"]).await.unwrap();
 
     // --------------------------
-    // Add a user (Transaction)
+    // Seed user
     // --------------------------
-    let mut tx = db.transaction().await.unwrap();
-    let user = json!({
+    db.add("users", "u1", &json!({
         "id": "u1",
         "name": "Alice",
-        "age": 25,
-        "tags": ["admin", "tester"]
-    });
-    tx.add("users", "u1", &user).await.unwrap();
-    tx.commit().await.unwrap(); // commit to persist
+        "balance": 100,
+        "role": "admin"
+    })).await.unwrap();
 
     // --------------------------
-    // Read the user (Transaction)
+    // Transaction with increment & remove
     // --------------------------
-    let mut tx_read = db.transaction().await.unwrap();
-    let fetched = tx_read.get("users", "u1").await.unwrap().unwrap();
-    assert_eq!(fetched, user);
-    tx_read.rollback().await.unwrap(); // rollback since we only read
+    let mut tx = db.transaction().await.unwrap();
+
+    // Increment balance by +50
+    tx.update("users", "u1", &json!({
+        "balance": increment(50)
+    })).await.unwrap();
+
+    // Decrement balance by -20
+    tx.update("users", "u1", &json!({
+        "balance": increment(-20)
+    })).await.unwrap();
+
+    // Remove role field
+    tx.update("users", "u1", &json!({
+        "role": remove()
+    })).await.unwrap();
+
+    // Add a notification atomically
+    tx.add("notifications:u1", "n1", &json!({
+        "msg": "Your balance was updated"
+    })).await.unwrap();
+
+    // Commit all at once
+    tx.commit().await.unwrap();
 
     // --------------------------
-    // Update a field
+    // Verify committed changes
     // --------------------------
-    let mut tx_update = db.transaction().await.unwrap();
-    tx_update.update("users", "u1", "age", &json!(26)).await.unwrap();
-    tx_update.commit().await.unwrap();
+    let final_user = db.get("users", "u1").await.unwrap().unwrap();
+    assert_eq!(final_user["balance"], 130); // 100 + 50 - 20
+    assert!(final_user.get("role").is_none());
 
-    let mut tx_check = db.transaction().await.unwrap();
-    let updated = tx_check.get("users", "u1").await.unwrap().unwrap();
-    assert_eq!(updated["age"], 26);
-    tx_check.rollback().await.unwrap();
+    let notif = db.get("notifications:u1", "n1").await.unwrap().unwrap();
+    assert!(notif["msg"].as_str().unwrap().contains("updated"));
 
     // --------------------------
-    // Delete the user
+    // Rollback scenario
     // --------------------------
-    let mut tx_delete = db.transaction().await.unwrap();
-    tx_delete.delete("users", "u1").await.unwrap();
-    tx_delete.commit().await.unwrap();
+    let mut tx_rollback = db.transaction().await.unwrap();
 
-    let mut tx_verify = db.transaction().await.unwrap();
-    let deleted = tx_verify.get("users", "u1").await.unwrap();
-    assert!(deleted.is_none());
-    tx_verify.rollback().await.unwrap();
+    // Increment again but rollback later
+    tx_rollback.update("users", "u1", &json!({
+        "balance": increment(9999)
+    })).await.unwrap();
+
+    tx_rollback.rollback().await.unwrap();
+
+    let after_rollback = db.get("users", "u1").await.unwrap().unwrap();
+    assert_eq!(after_rollback["balance"], 130); // unchanged
+
+    // --------------------------
+    // Cleanup
+    // --------------------------
+    db.delete("users", "u1").await.unwrap();
+    db.delete("notifications:u1", "n1").await.unwrap();
 }

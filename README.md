@@ -1,124 +1,162 @@
-OsunbitDB
+# OsunbitDB
 
-OsunbitDB is a lightweight, asynchronous key-value database for Rust. It supports collection-based data storage, JSON-friendly operations, and batch transactions.
+OsunbitDB is a lightweight, async-first key-value database for Rust, built on **TiKV**.  
+It supports **Firestore-style collections**, **JSON-friendly updates**, and **atomic transactions**.
 
-Features
+---
 
-Async-first design using tokio
+## ✨ Features
 
-JSON-friendly, strongly typed with serde and bincode
+- 📦 Built on top [tikv](https://tikv.org) super fast atomic transaction client 
+- 🚀 Async-first with [tokio](https://tokio.rs)  
+- 📦 JSON-native via `serde_json`  
+- 📂 Collection & subcollection support (`users:u1:inbox`)  
+- 🔄 Atomic transactions  
+- ➕ Increment & field removal helpers  
+- 🔍 Simple API (`add`, `get`, `update`, `delete`, `scan`)  
 
-Collections for organizing keys
+---
 
-Add, get, delete, scan, and update operations
+## 📦 Installation
 
-Transaction support for multiple operations in one atomic block
+Add to `Cargo.toml`:
 
-Firestore-style simple API (db.add, db.get, etc.)
-
-Installation
-
-Add this to your Cargo.toml:
-
+```toml
 [dependencies]
-osunbitdb = "0.1.0"
+osunbitdb = "0.2.0"
+```
 
-Quick Start
-use osunbitdb::{OsunbitDB, OsunbitDBError};
-use serde::{Serialize, Deserialize};
-use osunbitdb::json; // for Firestore-style JSON objects
+---
 
-#[derive(Serialize, Deserialize, Debug)]
-struct User {
-    id: String,
-    name: String,
-    age: u32,
-}
+## ⚡ Quick Start
 
-#[tokio::main]
-async fn main() -> Result<(), OsunbitDBError> {
-    // Connect to the DB
+```rust
+   use osunbitdb::{OsunbitDB, json};
+
+    // Connect to the tikv cluster
     let db = OsunbitDB::new(&["http://127.0.0.1:2379"]).await?;
 
-
-    // Add a user
+    // ➕ Add a document
     let user = json!({"id": "u1", "name": "Alice", "age": 25});
     db.add("users", "u1", &user).await?;
 
-    // Get a user
+    // 🔍 Get a document
     let fetched = db.get("users", "u1").await?.unwrap();
-    println!("Fetched user: {:?}", fetched);
+    println!("Fetched: {:?}", fetched);
 
-    // Update a field
-    db.update("users", "u1", "age", &json!(30)).await?;
-    let updated = db.get("users", "u1").await?.unwrap();
-    println!("Updated user: {:?}", updated);
+    // ✏️ Update fields (partial update, other fields untouched or create if not exists)
+    db.update("users", "u1", &json!({"age": 26, "active": true})).await?;
 
-    // Delete a user
+    // ❌ Delete document
     db.delete("users", "u1").await?;
-    let deleted = db.get("users", "u1").await?;
-    println!("Deleted? {:?}", deleted.is_none());
 
-    Ok(())
-}
+```
 
-Using Transactions
+---
 
-Transactions allow multiple operations to be executed atomically:
+## 📂 Collections & Subcollections
 
-use osunbitdb::{OsunbitDB, json};
+```rust
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Add to a subcollection
+    db.add("users:u1:inbox", "m1", &json!({
+        "title": "Hello",
+        "body": "First message"
+    })).await?;
+
+    // Fetch
+    let msg = db.get("users:u1:inbox", "m1").await?.unwrap();
+    println!("Inbox msg: {:?}", msg);
+
+    // Nested sub-subcollection
+    db.add("users:u1:inbox:group1", "g1msg", &json!({
+        "title": "Group message"
+    })).await?;
+
+```
+
+---
+
+## 🔄 Increment & Remove Helpers
+
+```rust
+use osunbitdb::{OsunbitDB, json, increment, remove};
+
     let db = OsunbitDB::new(&["http://127.0.0.1:2379"]).await?;
+
+    db.add("users", "u1", &json!({"balance": 100, "role": "admin"})).await?;
+
+    // ➕ Increment field
+    db.update("users", "u1", &json!({
+        "balance": increment(25)
+    })).await?;
+    // balance = 125
+
+    // ➖ Decrement field
+    db.update("users", "u1", &json!({
+        "balance": increment(-5)
+    })).await?;
+    // balance = 120
+
+    // 🗑️ Remove a field
+    db.update("users", "u1", &json!({
+        "role": remove()
+    })).await?;
+
+```
+
+---
+
+## 🔒 Transactions (Atomic Ops)
+
+```rust
+use osunbitdb::{OsunbitDB, json, increment, remove};
 
     // Start a transaction
     let mut tx = db.transaction().await?;
 
-    // Add multiple fields
-    let user = json!({"id": "u2", "name": "Bob", "age": 28});
-    tx.add("users", "u2", &user).await?;
-    
-    // Commit transaction to persist
+    // Atomic balance transfer
+    tx.update("users", "u1", &json!({"balance": increment(-100)})).await?;
+    tx.update("users", "u2", &json!({"balance": increment(100)})).await?;
+
+    // Add a notification
+    tx.add("notifications:u2", "n1", &json!({
+        "msg": "You received 100 from Alice"
+    })).await?;
+
+    // Commit all changes
     tx.commit().await?;
 
-    // Read inside another transaction
-    let mut tx_read = db.transaction().await?;
-    let fetched = tx_read.get("users", "u2").await?.unwrap();
-    println!("Fetched in transaction: {:?}", fetched);
-    tx_read.rollback().await?; // rollback if only reading
+    // Rollback example
+    let mut tx2 = db.transaction().await?;
+    tx2.update("users", "u1", &json!({"balance": increment(9999)})).await?;
+    tx2.rollback().await?;
 
-    // Update a field in transaction
-    let mut tx_update = db.transaction().await?;
-    tx_update.update("users", "u2", "age", &json!(29)).await?;
-    tx_update.commit().await?;
+```
 
-    // Delete user
-    let mut tx_delete = db.transaction().await?;
-    tx_delete.delete("users", "u2").await?;
-    tx_delete.commit().await?;
+---
 
-    Ok(())
+## 🔍 Scanning Collections
+
+```rust
+let scanned = db.scan("users", 10).await?;
+for (key, doc) in scanned {
+    println!("User {} => {:?}", key, doc);
 }
+```
 
-Scanning Keys
+---
 
-You can scan a collection for keys with a prefix:
+## 📝 Notes
 
-let users = db.collection("users");
-let scanned = users.scan("u", 10).await?;
-for (key, value) in scanned {
-    println!("Key: {}, Value: {:?}", key, value);
-}
+- Collections are just logical namespaces (`users`, `users:u1:inbox`)  
+- Subcollections can be nested infinitely using `:`  
+- Updates only modify provided fields (others remain unchanged) 
+- All operation are transaction   
+- Transactions guarantee all-or-nothing execution  
 
-Notes
+---
 
-Collections: Logical namespaces for keys (e.g., "users", "posts")
-
-Firestore-style API: db.add, db.get, db.update, db.delete are all backed by transactions internally.
-
-Transactions: Use db.transaction() when you need multiple operations to be atomic.
-
-License
+## 📜 License
 
 MIT OR Apache-2.0
