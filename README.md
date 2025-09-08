@@ -77,10 +77,10 @@ osunbitdb = "0.2.0"
 
 ---
 
-## 🔄 Increment & Remove Helpers
+## 🔄 Increment & Remove & Array Union Helpers
 
 ```rust
-use osunbitdb::{OsunbitDB, json, increment, remove};
+use osunbitdb::{OsunbitDB, json, increment, remove, array_union};
 
     let db = OsunbitDB::new(&["http://127.0.0.1:2379"]).await?;
 
@@ -98,10 +98,27 @@ use osunbitdb::{OsunbitDB, json, increment, remove};
     })).await?;
     // balance = 120
 
-    // 🗑️ Remove a field
+   // 🗑️ Remove a field (top-level)
     db.update("users", "u1", &json!({
         "role": remove()
     })).await?;
+
+    // ➕ Increment nested field
+    db.update("users", "u1", &json!({
+        "profile.points": increment(5)
+    })).await?;
+    // profile.points = 15
+
+    // 🗑️ Remove nested field
+    db.update("users", "u1", &json!({
+        "profile.badges": remove()
+    })).await?;
+
+    // 🔗 Array Union (top-level)
+    db.update("users", "u1", &json!({
+        "tags": array_union(json!(["rust", "db"]))
+    })).await?;
+
 
 ```
 
@@ -154,6 +171,10 @@ for (key, doc) in scanned {
 - Updates only modify provided fields (others remain unchanged) 
 - All operation are transaction   
 - Transactions guarantee all-or-nothing execution  
+- All helpers support dot notation for nested fields
+- increment() works with positive or negative numbers.
+- remove() deletes the field entirely.
+- array_union() merges arrays without duplicates.
 
 ---
 

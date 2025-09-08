@@ -6,7 +6,7 @@ authors = ["focusboon"]
 description = "A lightweight super fast transaction async db"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/osunbit/osunbitdb"
-keywords = ["osunbit", "database", "async","tikv","rocksdb", "rust", "document"]
+keywords = ["osunbit", "database", "async","tikv", "document"]
 categories = ["database"]
 readme = "README.md"
 
