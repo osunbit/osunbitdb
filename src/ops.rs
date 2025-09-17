@@ -12,3 +12,7 @@ pub fn remove() -> Json {
 pub fn array_union(values: Json) -> Json {
     json!({ "__op": "array_union", "values": values })
 }
+
+pub fn array_remove(values: Json) -> Json {
+json!({ "__op": "array_remove", "values": values })
+}

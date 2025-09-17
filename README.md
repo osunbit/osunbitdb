@@ -77,10 +77,10 @@ osunbitdb = "0.2.0"
 
 ---
 
-## 🔄 Increment & Remove & Array Union Helpers
+## 🔄 Increment & Remove & Array Union & Array Remove & ExpiryAt Helpers
 
 ```rust
-use osunbitdb::{OsunbitDB, json, increment, remove, array_union};
+use osunbitdb::{OsunbitDB, json, increment, remove, array_union, array_remove};
 
     let db = OsunbitDB::new(&["http://127.0.0.1:2379"]).await?;
 
@@ -119,6 +119,20 @@ use osunbitdb::{OsunbitDB, json, increment, remove, array_union};
         "tags": array_union(json!(["rust", "db"]))
     })).await?;
 
+    // ✅ Array array_remove (top-level)
+    db.update("users", "u1", &json!({
+        "tags": array_remove(json!(["rust"]))
+    })).await?;
+
+     // ✅ ExpiryAt test
+    let exp_doc = json!({
+        "id": "exp1",
+        "name": "WillExpire",
+        "expiryAt": "02-10-2015"
+    });
+
+    db.update("sessions", "exp1", &exp_doc).await?;
+
 
 ```
 
@@ -156,10 +170,28 @@ use osunbitdb::{OsunbitDB, json, increment, remove};
 ## 🔍 Scanning Collections
 
 ```rust
-let scanned = db.scan("users", 10).await?;
-for (key, doc) in scanned {
-    println!("User {} => {:?}", key, doc);
-}
+// scan first 10
+let scanned = db.scan("users", 10, "").await?;
+
+// scan 10 from id
+let scanned_from_id = db.scan("users", 10, "id").await?;
+
+let batch_docs = json!({
+    "tx1": {"amount": 100, "type": "send"},
+    "tx2": {"amount": 200, "type": "receive"}
+});
+
+db.batch_add("transactions:u123", &batch_docs).await?;
+
+let ids_json = json!(["tx1", "tx2"]);
+let docs = db.batch_get("transactions:u123", &ids_json).await?;
+ 
+
+ let ids_to_delete = json!(["tx1", "tx2"]);
+db.batch_delete("transactions:u123", &ids_to_delete).await?;
+
+
+ 
 ```
 
 ---
